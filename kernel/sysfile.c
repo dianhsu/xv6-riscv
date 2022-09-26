@@ -103,7 +103,6 @@ sys_close(void)
   fileclose(f);
   return 0;
 }
-
 uint64
 sys_fstat(void)
 {
