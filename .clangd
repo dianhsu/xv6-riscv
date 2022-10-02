@@ -1,3 +1,4 @@
 CompileFlags:
-    Add: ["-Wall", "-Wno-unused-variable", "-I/root/workspace/xv6-riscv/"]
+    Add: ["-Wall", "-Wno-unused-variable", "-I/root/workspace/xv6-riscv/", "-Wno-gnu-designator"]
     Remove: -std=*
+    Compiler: gcc
