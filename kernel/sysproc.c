@@ -81,6 +81,26 @@ int
 sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
+  uint64 p;
+  int n;
+  uint64 addr;
+  unsigned abits = 0;
+  if(argaddr(0, &p) < 0 || argint(1, &n) < 0 || argaddr(2, &addr) < 0)
+    return -1;
+  p = PGROUNDDOWN(p);
+  uint64 edp = PGROUNDDOWN(p + n * PGSIZE - 1);
+  pte_t *pte;
+  for(int i = 0; i < 32 && p <= edp; i++, p += PGSIZE){
+    if((pte = walk(myproc()->pagetable, p, 0)) == 0){
+      continue;
+    }else{
+      if(*pte & PTE_A){
+        abits |= ((unsigned) 1 << i);
+        *pte &= ~PTE_A; 
+      }
+    }
+  }
+  copyout(myproc()->pagetable, addr, (char *) &abits, sizeof(abits));
   return 0;
 }
 #endif
