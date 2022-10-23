@@ -1,3 +1,4 @@
 CompileFlags:
-    Add: [-Wno-gnu-designator]
+    Add: [-Wno-gnu-designator, -I/home/dianhsu/repos/xv6-riscv/]
     Remove: -std*
+    Compiler: gcc
