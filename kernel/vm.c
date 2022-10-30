@@ -308,27 +308,37 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
+    if((*pte) & PTE_W){
+      *pte = (*pte & (~PTE_W)) | PTE_COW;
+    }
     pa = PTE2PA(*pte);
+    refCountInc(pa);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
       goto err;
     }
   }
   return 0;
 
  err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
+  uvmunmap(new, 0, i / PGSIZE, 0);
+  freewalk(new);
+  for(uint64 j = 0; j <= i; j += PGSIZE){
+    pte = walk(old, i, 0);
+    if((*pte) & PTE_COW){
+      (*pte) = (*pte) & (~PTE_COW);
+      (*pte) &= PTE_W;
+    }
+    pa = PTE2PA(*pte);
+    refCountDec(pa);
+  }
   return -1;
 }
 
@@ -358,6 +368,11 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
+    pte_t *pte = walk(pagetable, va0, 0);
+    if((*pte & PTE_COW) && get_new_page(pagetable, va0) != 0){
+      return -1;
+    }
+    pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -436,4 +451,38 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int get_new_page(pagetable_t pagetable, uint64 va){
+  if(va >= KERNBASE){
+    return -1;
+  }
+  va = PGROUNDDOWN(va);
+  pte_t *pte;
+  if((pte = walk(pagetable, va, 0)) == 0){
+    panic("get_new_page: pte should exist");
+    return -1;
+  }
+  if((*pte & PTE_V) == 0){
+    panic("get_new_page: page invalid");
+    return -1;
+  }
+  uint flags = PTE_FLAGS(*pte);
+  if((flags & PTE_COW) == 0){
+    return -1;
+  }
+  (*pte) = ((*pte) | PTE_W) & (~PTE_COW);
+  flags = PTE_FLAGS(*pte);
+
+  uint64 oldPage = PTE2PA(*pte);
+  if(refCountDec(oldPage) == 1){
+    return 0;
+  }
+  char *newPage;
+  if((newPage = kalloc()) == 0){
+    refCountInc(oldPage);
+    return -1;
+  }
+  *pte = PA2PTE((uint64)memmove(newPage, (void *)oldPage, PGSIZE)) | flags;
+  return 0;
 }
